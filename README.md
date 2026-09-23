@@ -230,4 +230,5 @@ python scripts/failure_simulation/clear_faults.py
 - [Interactive Demonstration Guide](docs/demo.md)
 #   A g e n t i c - I n c i d e n t - R e s o l u t i o n - P l a t f o r m  
  #   A g e n t i c - I n c i d e n t - R e s o l u t i o n - P l a t f o r m 1  
+ #   A g e n t i c - I n c i d e n t - R e s o l u t i o n - P l a t f o r m 1  
  
