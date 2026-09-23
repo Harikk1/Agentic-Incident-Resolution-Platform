@@ -1,0 +1,145 @@
+services:
+  # ---------------------------------------------
+  # Observability & Persistence
+  # ---------------------------------------------
+  mongodb:
+    image: mongo:7.0
+    container_name: smartops-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: smartops-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: smartops-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+  # ---------------------------------------------
+  # Realistic Microservices
+  # ---------------------------------------------
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    container_name: smartops-user-service
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+
+  order-service:
+    build:
+      context: .
+      dockerfile: services/order-service/Dockerfile
+    container_name: smartops-order-service
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - USER_SERVICE_URL=http://user-service:8001
+    depends_on:
+      - user-service
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: services/payment-service/Dockerfile
+    container_name: smartops-payment-service
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    environment:
+      - PORT=8003
+      - ORDER_SERVICE_URL=http://order-service:8002
+    depends_on:
+      - order-service
+
+  # ---------------------------------------------
+  # SmartOps Core & MCP Server
+  # ---------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: smartops-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MOCK_KUBERNETES=true
+      - MOCK_LLM=true
+      - MOCK_LOGS=true
+      - MOCK_DATABASE=false
+      - MONGODB_URI=mongodb://mongodb:27017/smartops
+      - PROMETHEUS_URL=http://prometheus:9090
+      - USER_SERVICE_URL=http://user-service:8001
+      - ORDER_SERVICE_URL=http://order-service:8002
+      - PAYMENT_SERVICE_URL=http://payment-service:8003
+    depends_on:
+      - mongodb
+      - user-service
+      - order-service
+      - payment-service
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: mcp_server/Dockerfile
+    container_name: smartops-mcp-server
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    environment:
+      - MOCK_KUBERNETES=true
+      - MOCK_DATABASE=false
+      - MONGODB_URI=mongodb://mongodb:27017/smartops
+      - SMARTOPS_BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+
+  # ---------------------------------------------
+  # React Dashboard Frontend
+  # ---------------------------------------------
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    container_name: smartops-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:
